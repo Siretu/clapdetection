@@ -1,8 +1,9 @@
+#!/usr/bin/env python
+
 from collections import deque
 import pyaudio
 import audioop
 import socket
-import subprocess
 
 lamp_on = True
 
@@ -10,69 +11,78 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16 #paInt8
 CHANNELS = 2 
 RATE = 44100 #sample rate
+THRESHOLD = 10**8
+TICKS_BETWEEN_CLAPS = 15
 
 p = pyaudio.PyAudio()
 
-stream = p.open(#input_device_index=2,
-    format=FORMAT,
-    channels=CHANNELS,
-    rate=RATE,
-    input=True,
-    frames_per_buffer=CHUNK) #buffer
+stream = p.open(format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK) #buffer
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+
+# Connect to local lifx server and get light power status
+
 sock.connect(("localhost",5432))
-print "Getting light status"
+print("Getting light status")
 status = sock.recv(1024)
-print "Got status: %s" % status
+print("Got status: %s" % status)
 lamp_on = (status == b"True")
-print "Lamp on: %s" % str(lamp_on)
+print("Lamp on: %s" % str(lamp_on))
 
-print("* recording")
-print(p.get_device_info_by_index(0)['defaultSampleRate'])
 
-peaks = deque()
+latest_chunks = deque() # Latest 20 chunks. 0's are below threshold, 1's are above threshold.
 
 recent = 0
-threshold = 0
+non_peaks = 0
 while 1:
+
+    # Decrease recent, and reset non_peaks when it reaches 0
     if recent > 0:
         recent -= 1
         if not recent:
-            threshold = 0
+            non_peaks = 0
+
+    # Read audio data from stream
     try:
         data = stream.read(CHUNK)
     except IOError:
         print("Data lost")
         continue
-    avg = audioop.max(data,4)
-    if avg > 100000000:
-        peaks.append(1)
-        print(str(avg) + " ***************")
-        if recent == 0 and sum(peaks) == 1:
-            recent = 15
-        else:
-            if threshold >= 4 and sum(peaks) < 5:
-                recent = 0
-                threshold = 0
-                print("DOUBLE-CLAP")
-                if lamp_on:
-                    sock.send("off")
-                    #subprocess.Popen("python3 /home/pi/work/lifx-python/lights_off.py", shell=True)
-                else:
-                    sock.send("on")
-                    #subprocess.Popen("python3 /home/pi/work/lifx-python/lights_on.py", shell=True)
-                lamp_on = not lamp_on
-    else:
-        peaks.append(0)
-        if recent > 0:
-            threshold += 1
-        print(avg)
-    if len(peaks) > 20:
-        peaks.popleft()
 
-print("* done recording")
+    
+    max_level = audioop.max(data,4)
+    if max_level > THRESHOLD:
+        latest_chunks.append(1)
+        print(str(max_level) + " ***************")
+        
+        # Got first clap
+        if recent == 0 and sum(latest_chunks) == 1:
+            recent = TICKS_BETWEEN_CLAPS
+        # Got second clap
+        elif non_peaks >= 4 and sum(latest_chunks) < 5:
+            # Reset
+            recent = 0
+            non_peaks = 0
+            print("DOUBLE-CLAP")
+            if lamp_on:
+                sock.send("off")
+            else:
+                sock.send("on")
+            lamp_on = not lamp_on
+    else:
+        latest_chunks.append(0)
+        if recent > 0:
+            non_peaks += 1
+        print(max_level)
+
+    # Keep size of latest_chunks at 20
+    if len(latest_chunks) > 20:
+        latest_chunks.popleft()
 
 stream.stop_stream()
 stream.close()
