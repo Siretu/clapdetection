@@ -11,7 +11,7 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16 #paInt8
 CHANNELS = 2 
 RATE = 44100 #sample rate
-THRESHOLD = 10**8
+THRESHOLD = 10**10
 TICKS_BETWEEN_CLAPS = 15
 
 p = pyaudio.PyAudio()
@@ -39,8 +39,8 @@ latest_chunks = deque() # Latest 20 chunks. 0's are below threshold, 1's are abo
 
 recent = 0
 non_peaks = 0
+avg = []
 while 1:
-
     # Decrease recent, and reset non_peaks when it reaches 0
     if recent > 0:
         recent -= 1
@@ -56,6 +56,13 @@ while 1:
 
     
     max_level = audioop.max(data,4)
+    if len(avg) < 30:
+        avg.append(max_level)
+    elif len(avg) == 30:
+        THRESHOLD = sum(avg)/len(avg)*3
+        print "Set threshold to: %d" % THRESHOLD
+        avg.append(avg[0])
+
     if max_level > THRESHOLD:
         latest_chunks.append(1)
         print(str(max_level) + " ***************")
@@ -64,7 +71,7 @@ while 1:
         if recent == 0 and sum(latest_chunks) == 1:
             recent = TICKS_BETWEEN_CLAPS
         # Got second clap
-        elif non_peaks >= 4 and sum(latest_chunks) < 5:
+        elif non_peaks >= 4 and sum(latest_chunks) < 8:
             # Reset
             recent = 0
             non_peaks = 0
