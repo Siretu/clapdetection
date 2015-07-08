@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import lifx
+import socket
 
-addr = b'\00\00\00\00\00\00'
-
-lifx.set_power(lifx.BCAST, False)
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(("localhost",5432))
+status = sock.recv(1024)
+sock.send("off")
 
