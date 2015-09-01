@@ -59,7 +59,7 @@ while 1:
     if len(avg) < 30:
         avg.append(max_level)
     elif len(avg) == 30:
-        THRESHOLD = sum(avg)/len(avg)*3
+        THRESHOLD = sum(avg)/len(avg)*4
         print "Set threshold to: %d" % THRESHOLD
         avg.append(avg[0])
 
